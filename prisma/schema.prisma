@@ -24,6 +24,8 @@ model User {
   sessions      Session[]
   accounts      Account[]
 
+  linearApiKey String?
+
   repositories Repository[]
   reviews      Review[]
 
@@ -105,6 +107,7 @@ model Review {
   summary      String?      @db.Text
   riskScore    Int?
   comments     Json?
+  aiModel      String?
   error        String?      @db.Text
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt

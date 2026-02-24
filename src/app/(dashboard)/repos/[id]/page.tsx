@@ -26,6 +26,8 @@ import {
   Lock,
 } from "lucide-react";
 import { cn, formatDate } from "@/lib/utils";
+import { LinearIssueBadge } from "@/components/linear-issue-badge";
+import type { LinearIssueInfo } from "@/server/services/linear";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -42,6 +44,17 @@ export default function RepositoryDetailPage({ params }: PageProps) {
   const pullRequests = trpc.pullRequest.list.useQuery(
     { repositoryId: id, state: prState },
     { enabled: !!id },
+  );
+
+  const linearIssues = trpc.linear.getIssuesForPRs.useQuery(
+    {
+      prs: (pullRequests.data ?? []).map((pr) => ({
+        number: pr.number,
+        title: pr.title,
+        headRef: pr.headRef,
+      })),
+    },
+    { enabled: !!pullRequests.data && pullRequests.data.length > 0 },
   );
 
   const prCounts = {
@@ -221,7 +234,12 @@ export default function RepositoryDetailPage({ params }: PageProps) {
           </Card>
         ) : (
           pullRequests.data?.map((pr) => (
-            <PullRequestCard key={pr.id} pr={pr} repositoryId={id} />
+            <PullRequestCard
+              key={pr.id}
+              pr={pr}
+              repositoryId={id}
+              linearIssue={linearIssues.data?.[pr.number] ?? null}
+            />
           ))
         )}
       </div>
@@ -248,9 +266,10 @@ interface PullRequestCardProps {
     review: { status: string; createdAt: Date } | null;
   };
   repositoryId: string;
+  linearIssue: LinearIssueInfo | null;
 }
 
-function PullRequestCard({ pr, repositoryId }: PullRequestCardProps) {
+function PullRequestCard({ pr, repositoryId, linearIssue }: PullRequestCardProps) {
   const isMerged = pr.state === "closed" && pr.mergedAt !== null;
 
   return (
@@ -303,6 +322,12 @@ function PullRequestCard({ pr, repositoryId }: PullRequestCardProps) {
                   <Clock className="size-3" />
                   {formatDate(pr.createdAt)}
                 </span>
+                {linearIssue && (
+                  <>
+                    <span className="text-muted-foreground/40">•</span>
+                    <LinearIssueBadge issue={linearIssue} compact />
+                  </>
+                )}
               </div>
 
               <div className="flex items-center gap-4 text-sm">
