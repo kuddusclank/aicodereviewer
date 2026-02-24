@@ -6,13 +6,18 @@ import {
   fetchPullRequest,
   getGitHubAccessToken,
 } from "@/server/services/github";
+import { getAvailableProviders } from "@/server/services/ai";
 
 export const reviewRouter = createTRPCRouter({
+  availableModels: protectedProcedure.query(() => {
+    return getAvailableProviders();
+  }),
   trigger: protectedProcedure
     .input(
       z.object({
         repositoryId: z.string(),
         prNumber: z.number(),
+        providerId: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -68,6 +73,7 @@ export const reviewRouter = createTRPCRouter({
           repositoryId: repository.id,
           prNumber: pr.number,
           userId: ctx.user.id,
+          providerId: input.providerId,
         },
       });
 

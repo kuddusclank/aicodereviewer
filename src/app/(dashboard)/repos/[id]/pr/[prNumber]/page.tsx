@@ -25,7 +25,15 @@ import {
   ArrowRight,
   Wand2,
   ScanSearch,
+  ChevronDown,
+  Bot,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { DiffViewer } from "@/components/diff-viewer";
 import { ReviewResult } from "@/components/review-result";
@@ -39,6 +47,9 @@ export default function PullRequestDetailPage({ params }: PageProps) {
   const { id, prNumber } = use(params);
   const prNum = parseInt(prNumber, 10);
   const [activeTab, setActiveTab] = useState<"review" | "files">("review");
+  const [selectedProviderId, setSelectedProviderId] = useState<
+    string | undefined
+  >(undefined);
 
   const pr = trpc.pullRequest.get.useQuery(
     { repositoryId: id, prNumber: prNum },
@@ -63,6 +74,12 @@ export default function PullRequestDetailPage({ params }: PageProps) {
       },
     },
   );
+
+  const availableModels = trpc.review.availableModels.useQuery();
+
+  const selectedModel =
+    availableModels.data?.find((m) => m.id === selectedProviderId) ??
+    availableModels.data?.[0];
 
   const linearIssue = trpc.linear.getIssueForPR.useQuery(
     {
@@ -287,24 +304,65 @@ export default function PullRequestDetailPage({ params }: PageProps) {
                       ? latestReview.data.createdAt
                       : null
                   }
+                  aiModel={
+                    latestReview.data?.status === "COMPLETED"
+                      ? (latestReview.data.aiModel ?? undefined)
+                      : undefined
+                  }
                 />
                 {!isReviewing && <div className="h-4 w-px bg-border" />}
                 {isReviewing ? null : (
-                  <Button
-                    variant="outline"
-                    size={"sm"}
-                    onClick={() => {
-                      triggerReview.mutate({
-                        repositoryId: id,
-                        prNumber: prNum,
-                      });
-                    }}
-                    disabled={triggerReview.isPending}
-                    className="gap-1.5 h-auto py-1 px-2 text-xs"
-                  >
-                    <Wand2 />
-                    {latestReview.data ? "Re-run" : "Review"}
-                  </Button>
+                  <div className="flex items-center">
+                    <Button
+                      variant="outline"
+                      size={"sm"}
+                      onClick={() => {
+                        triggerReview.mutate({
+                          repositoryId: id,
+                          prNumber: prNum,
+                          providerId: selectedModel?.id,
+                        });
+                      }}
+                      disabled={
+                        triggerReview.isPending ||
+                        !availableModels.data?.length
+                      }
+                      className="gap-1.5 h-auto py-1 px-2 text-xs rounded-r-none border-r-0"
+                    >
+                      <Wand2 />
+                      {latestReview.data ? "Re-run" : "Review"}
+                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size={"sm"}
+                          disabled={
+                            triggerReview.isPending ||
+                            !availableModels.data?.length
+                          }
+                          className="h-auto py-1 px-1.5 text-xs rounded-l-none"
+                        >
+                          <ChevronDown className="size-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-36">
+                        {availableModels.data?.map((model) => (
+                          <DropdownMenuItem
+                            key={model.id}
+                            onClick={() => setSelectedProviderId(model.id)}
+                            className="gap-2"
+                          >
+                            <Bot className="size-3.5 text-muted-foreground" />
+                            <span>{model.name}</span>
+                            {selectedModel?.id === model.id && (
+                              <CheckCircle className="size-3 ml-auto text-primary" />
+                            )}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 )}
               </div>
             </div>
@@ -358,9 +416,15 @@ export default function PullRequestDetailPage({ params }: PageProps) {
                 <Button
                   className="mt-6"
                   onClick={() =>
-                    triggerReview.mutate({ repositoryId: id, prNumber: prNum })
+                    triggerReview.mutate({
+                      repositoryId: id,
+                      prNumber: prNum,
+                      providerId: selectedModel?.id,
+                    })
                   }
-                  disabled={triggerReview.isPending}
+                  disabled={
+                    triggerReview.isPending || !availableModels.data?.length
+                  }
                 >
                   Run AI Review
                 </Button>
@@ -529,9 +593,11 @@ function PRStatusBadge({
 function ReviewStatusBadge({
   status,
   completedAt,
+  aiModel,
 }: {
   status: string | null;
   completedAt?: Date | null;
+  aiModel?: string;
 }) {
   const getTimeAgo = (date: Date) => {
     const now = new Date();
@@ -561,9 +627,12 @@ function ReviewStatusBadge({
   const config = {
     COMPLETED: {
       icon: CheckCircle,
-      label: completedAt
-        ? `AI Review completed · ${getTimeAgo(completedAt)}`
-        : "AI Review completed",
+      label: (() => {
+        const parts = ["AI Review"];
+        if (aiModel) parts.push(`· ${aiModel}`);
+        if (completedAt) parts.push(`· ${getTimeAgo(completedAt)}`);
+        return parts.join(" ");
+      })(),
       className:
         "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
     },

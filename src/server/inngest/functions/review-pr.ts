@@ -14,6 +14,7 @@ export type ReviewPREvent = {
     repositoryId: string;
     prNumber: number;
     userId: string;
+    providerId?: string;
   };
 };
 
@@ -24,7 +25,7 @@ export const reviewPR = inngest.createFunction(
   },
   { event: "review/pr.requested" },
   async ({ event, step }) => {
-    const { reviewId, repositoryId, prNumber, userId } = event.data;
+    const { reviewId, repositoryId, prNumber, userId, providerId } = event.data;
 
     await step.run("update-status-processing", async () => {
       await db.review.update({
@@ -98,6 +99,7 @@ export const reviewPR = inngest.createFunction(
           deletions: f.deletions,
           patch: f.patch,
         })),
+        providerId,
       );
     });
 
@@ -109,6 +111,7 @@ export const reviewPR = inngest.createFunction(
           summary: reviewResult.summary,
           riskScore: reviewResult.riskScore,
           comments: reviewResult.comments,
+          aiModel: reviewResult.aiModel,
         },
       });
     });
