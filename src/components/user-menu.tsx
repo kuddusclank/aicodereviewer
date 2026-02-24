@@ -12,8 +12,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LogOut, Settings, User, ChevronDown } from "lucide-react";
-import { use } from "react";
+import { LogOut, Settings, User, ChevronDown, LayoutGrid } from "lucide-react";
+import { LinearConnect } from "@/components/linear-connect";
 
 interface UserProps {
   id: string;
@@ -90,6 +90,15 @@ export function UserMenu({ user }: { user: UserProps }) {
           <Settings className="size-4" />
           Settings
         </DropdownMenuItem>
+        <LinearConnect>
+          <DropdownMenuItem
+            className="gap-2 py-2 cursor-pointer"
+            onSelect={(e) => e.preventDefault()}
+          >
+            <LayoutGrid className="size-4" />
+            Connect Linear
+          </DropdownMenuItem>
+        </LinearConnect>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={handleSignOut}

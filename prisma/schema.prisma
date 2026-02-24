@@ -24,6 +24,8 @@ model User {
   sessions      Session[]
   accounts      Account[]
 
+  linearApiKey String?
+
   repositories Repository[]
   reviews      Review[]
 

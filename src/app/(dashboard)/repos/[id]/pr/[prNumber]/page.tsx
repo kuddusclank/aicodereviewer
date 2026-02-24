@@ -29,6 +29,7 @@ import {
 import { cn } from "@/lib/utils";
 import { DiffViewer } from "@/components/diff-viewer";
 import { ReviewResult } from "@/components/review-result";
+import { LinearIssueBadge } from "@/components/linear-issue-badge";
 
 type PageProps = {
   params: Promise<{ id: string; prNumber: string }>;
@@ -61,6 +62,14 @@ export default function PullRequestDetailPage({ params }: PageProps) {
         return false;
       },
     },
+  );
+
+  const linearIssue = trpc.linear.getIssueForPR.useQuery(
+    {
+      branchName: pr.data?.headRef ?? "",
+      prTitle: pr.data?.title ?? "",
+    },
+    { enabled: !!pr.data },
   );
 
   const triggerReview = trpc.review.trigger.useMutation({
@@ -219,6 +228,34 @@ export default function PullRequestDetailPage({ params }: PageProps) {
                 </div>
               </div>
             </div>
+
+            {linearIssue.data && (
+              <div className="flex-1 p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-muted">
+                    {linearIssue.data.state && (
+                      <span
+                        className="block size-4 rounded"
+                        style={{ backgroundColor: linearIssue.data.state.color }}
+                      />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Linear Issue
+                    </p>
+                    <div className="flex items-center gap-2 text-sm">
+                      <LinearIssueBadge issue={linearIssue.data} />
+                    </div>
+                    {linearIssue.data.assignee && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Assigned to {linearIssue.data.assignee.name}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="flex items-center gap-6 px-6 py-4">
               <StatItem
