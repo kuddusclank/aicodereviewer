@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { trpc } from "@/lib/trpc/client";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
+import { useConvexAction } from "@/hooks/useConvexAction";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -20,7 +22,6 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
-  GitBranch,
   Lock,
   Globe,
   RefreshCw,
@@ -28,7 +29,6 @@ import {
   Trash2,
   ArrowRight,
   Star,
-  GitPullRequest,
   Search,
   X,
   CheckCircle,
@@ -37,12 +37,13 @@ import {
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { ConnectGithub } from "@/components/connect-github";
+import type { Id } from "../../../../convex/_generated/dataModel";
 
 interface GitHubRepo {
   githubId: number;
   name: string;
   fullName: string;
-  private: boolean;
+  isPrivate: boolean;
   htmlUrl: string;
   description: string | null;
   language: string | null;
@@ -73,32 +74,26 @@ export default function ReposPage() {
   const [selectedRepos, setSelectedRepos] = useState<Set<number>>(new Set());
   const [showGitHubRepos, setShowGitHubRepos] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
 
-  const connectedRepos = trpc.repository.list.useQuery();
-  const githubRepos = trpc.repository.fetchFromGithub.useQuery(undefined, {
-    enabled: showGitHubRepos,
-  });
+  const connectedRepos = useQuery(api.repositories.list);
+  const githubRepos = useConvexAction(
+    api.repositories.fetchFromGithub,
+    showGitHubRepos ? {} : "skip",
+  );
 
-  const connectMutation = trpc.repository.connect.useMutation({
-    onSuccess: () => {
-      connectedRepos.refetch();
-      setSelectedRepos(new Set());
-      setShowGitHubRepos(false);
-    },
-  });
-
-  const disconnectMutation = trpc.repository.disconnect.useMutation({
-    onSuccess: () => {
-      connectedRepos.refetch();
-    },
-  });
+  const connectMutation = useMutation(api.repositories.connect);
+  const disconnectMutation = useMutation(api.repositories.disconnect);
 
   const connectedIds = new Set(
-    connectedRepos.data?.map((repo) => repo.githubId) || [],
+    connectedRepos?.map((repo) => repo.githubId) || [],
   );
 
   const availableRepos =
-    githubRepos.data?.filter((repo) => !connectedIds.has(repo.githubId)) || [];
+    (githubRepos.data as GitHubRepo[] | undefined)?.filter(
+      (repo) => !connectedIds.has(repo.githubId),
+    ) || [];
 
   const filteredAvailableRepos = availableRepos.filter(
     (repo) =>
@@ -116,17 +111,33 @@ export default function ReposPage() {
     setSelectedRepos(next);
   };
 
-  const handleConnect = () => {
+  const handleConnect = async () => {
     const reposToConnect = availableRepos
       .filter((r) => selectedRepos.has(r.githubId))
       .map((r) => ({
         githubId: r.githubId,
         name: r.name,
         fullName: r.fullName,
-        private: r.private,
+        isPrivate: r.isPrivate,
         htmlUrl: r.htmlUrl,
       }));
-    connectMutation.mutate({ repos: reposToConnect });
+    setIsConnecting(true);
+    try {
+      await connectMutation({ repos: reposToConnect });
+      setSelectedRepos(new Set());
+      setShowGitHubRepos(false);
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const handleDisconnect = async (id: Id<"repositories">) => {
+    setIsDisconnecting(true);
+    try {
+      await disconnectMutation({ id });
+    } finally {
+      setIsDisconnecting(false);
+    }
   };
 
   const selectAll = () => {
@@ -205,7 +216,9 @@ export default function ReposPage() {
               </div>
             ) : githubRepos.error ? (
               <div className="p-6">
-                {githubRepos.error.data?.code === "PRECONDITION_FAILED" ? (
+                {githubRepos.error.message?.includes(
+                  "not authorized",
+                ) ? (
                   <ConnectGithub
                     title="Github account not connected"
                     description="Connect your Github account to view your repositories."
@@ -290,29 +303,17 @@ export default function ReposPage() {
                   </p>
                   <Button
                     onClick={handleConnect}
-                    disabled={
-                      selectedRepos.size === 0 || connectMutation.isPending
-                    }
+                    disabled={selectedRepos.size === 0 || isConnecting}
                   >
-                    {connectMutation.isPending ? (
+                    {isConnecting ? (
                       <>
                         <RefreshCw className="size-4 animate-spin" />
                         Connecting...
                       </>
                     ) : (
                       <>
-                        {connectMutation.isPending ? (
-                          <>
-                            <RefreshCw className="h-4 w-4 animate-spin" />
-                            Connecting...
-                          </>
-                        ) : (
-                          <>
-                            Connect
-                            {selectedRepos.size > 0 &&
-                              ` (${selectedRepos.size})`}
-                          </>
-                        )}
+                        Connect
+                        {selectedRepos.size > 0 && ` (${selectedRepos.size})`}
                       </>
                     )}
                   </Button>
@@ -328,20 +329,20 @@ export default function ReposPage() {
           <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
             Connected Repositories
           </h2>
-          {connectedRepos.data && connectedRepos.data.length > 0 && (
+          {connectedRepos && connectedRepos.length > 0 && (
             <Badge variant={"secondary"} className="tabular-nums">
-              {connectedRepos.data.length}
+              {connectedRepos.length}
             </Badge>
           )}
         </div>
 
-        {connectedRepos.isLoading ? (
+        {connectedRepos === undefined ? (
           <div className="p-6 space-y-3">
             {[...Array(4)].map((_, i) => (
               <Skeleton key={i} className="h-16 w-full rounded-xl" />
             ))}
           </div>
-        ) : connectedRepos.data?.length === 0 ? (
+        ) : connectedRepos.length === 0 ? (
           <Card>
             <CardContent className="py-16 text-center">
               <div className="mx-auto h-14 rounded-full bg-muted flex items-center justify-center">
@@ -362,12 +363,12 @@ export default function ReposPage() {
           </Card>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
-            {connectedRepos.data?.map((repo) => (
+            {connectedRepos.map((repo) => (
               <ConnectedRepoCard
-                key={repo.id}
+                key={repo._id}
                 repo={repo}
-                onDisconnect={() => disconnectMutation.mutate({ id: repo.id })}
-                isDisconnecting={disconnectMutation.isPending}
+                onDisconnect={() => handleDisconnect(repo._id)}
+                isDisconnecting={isDisconnecting}
               />
             ))}
           </div>
@@ -383,10 +384,10 @@ function ConnectedRepoCard({
   isDisconnecting,
 }: {
   repo: {
-    id: string;
+    _id: Id<"repositories">;
     fullName: string;
-    private: boolean;
-    createdAt: Date;
+    isPrivate: boolean;
+    _creationTime: number;
   };
   onDisconnect: () => void;
   isDisconnecting: boolean;
@@ -395,17 +396,15 @@ function ConnectedRepoCard({
     <Card className="group hover:border-primary/30 transition-all hover:shadow-sm">
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-3">
-          <Link href={`/repos/${repo.id}`} className="flex-1 min-w-0">
+          <Link href={`/repos/${repo._id}`} className="flex-1 min-w-0">
             <div className="flex items-start gap-3">
               <div
                 className={cn(
                   "size-10 rounded-lg flex items-center justify-center shrink-0 transition-colors",
-                  repo.private
-                    ? "bg-emerald-500/10 group-hover:bg-emerald-500/15"
-                    : "bg-emerald-500/10 group-hover:bg-emerald-500/15",
+                  "bg-emerald-500/10 group-hover:bg-emerald-500/15",
                 )}
               >
-                {repo.private ? (
+                {repo.isPrivate ? (
                   <Lock className="size-4 text-amber-600 dark:text-amber-400" />
                 ) : (
                   <Globe className="size-4 text-emerald-600 dark:text-emerald-400" />
@@ -420,7 +419,7 @@ function ConnectedRepoCard({
                     variant={"outline"}
                     className="text-xs px-1.5 py-0 h-5"
                   >
-                    {repo.private ? "Private" : "Public"}
+                    {repo.isPrivate ? "Private" : "Public"}
                   </Badge>
                 </div>
               </div>
@@ -464,9 +463,9 @@ function ConnectedRepoCard({
 
         <div className="mt-4 pt-4 border-t border-border/60 flex items-center justify-between">
           <span className="text-xs text-muted-foreground">
-            Connected {formatDate(repo.createdAt)}
+            Connected {formatDate(new Date(repo._creationTime))}
           </span>
-          <Link href={`/repos/${repo.id}`}>
+          <Link href={`/repos/${repo._id}`}>
             <Button
               variant={"ghost"}
               size={"sm"}
@@ -510,7 +509,7 @@ function RepoSelectItem({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-medium truncate">{repo.fullName}</span>
-          {repo.private && (
+          {repo.isPrivate && (
             <Lock className="size-3 text-muted-foreground shrink-0" />
           )}
         </div>

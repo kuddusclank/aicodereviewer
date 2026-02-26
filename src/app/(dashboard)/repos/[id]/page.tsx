@@ -2,7 +2,9 @@
 
 import { use, useState } from "react";
 import Link from "next/link";
-import { trpc } from "@/lib/trpc/client";
+import { useQuery } from "convex/react";
+import { api } from "../../../../../convex/_generated/api";
+import { useConvexAction } from "@/hooks/useConvexAction";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +29,7 @@ import {
 } from "lucide-react";
 import { cn, formatDate } from "@/lib/utils";
 import { LinearIssueBadge } from "@/components/linear-issue-badge";
-import type { LinearIssueInfo } from "@/server/services/linear";
+import type { Id } from "../../../../../convex/_generated/dataModel";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -35,36 +37,44 @@ type PageProps = {
 
 export default function RepositoryDetailPage({ params }: PageProps) {
   const { id } = use(params);
+  const repoId = id as Id<"repositories">;
   const [prState, setPrState] = useState<"open" | "closed" | "all">("open");
 
-  const repository = trpc.repository.list.useQuery(undefined, {
-    select: (repos) => repos.find((r) => r.id === id),
-  });
+  const repository = useQuery(api.repositories.getById, { id: repoId });
 
-  const pullRequests = trpc.pullRequest.list.useQuery(
-    { repositoryId: id, state: prState },
-    { enabled: !!id },
+  const pullRequests = useConvexAction(
+    api.pullRequests.list,
+    repository ? { repositoryId: repoId, state: prState } : "skip",
   );
 
-  const linearIssues = trpc.linear.getIssuesForPRs.useQuery(
-    {
-      prs: (pullRequests.data ?? []).map((pr) => ({
-        number: pr.number,
-        title: pr.title,
-        headRef: pr.headRef,
-      })),
-    },
-    { enabled: !!pullRequests.data && pullRequests.data.length > 0 },
+  const linearIssues = useConvexAction(
+    api.linear.getIssuesForPRs,
+    pullRequests.data && pullRequests.data.length > 0
+      ? {
+          prs: pullRequests.data.map(
+            (pr: { number: number; title: string; headRef: string }) => ({
+              number: pr.number,
+              title: pr.title,
+              headRef: pr.headRef,
+            }),
+          ),
+        }
+      : "skip",
   );
 
   const prCounts = {
-    open: pullRequests.data?.filter((pr) => pr.state === "open").length ?? 0,
+    open:
+      pullRequests.data?.filter(
+        (pr: { state: string }) => pr.state === "open",
+      ).length ?? 0,
     closed:
-      pullRequests.data?.filter((pr) => pr.state === "closed").length ?? 0,
+      pullRequests.data?.filter(
+        (pr: { state: string }) => pr.state === "closed",
+      ).length ?? 0,
     all: pullRequests.data?.length ?? 0,
   };
 
-  if (repository.isLoading) {
+  if (repository === undefined) {
     return (
       <div className="space-y-8">
         <div className="flex items-center gap-4">
@@ -83,7 +93,7 @@ export default function RepositoryDetailPage({ params }: PageProps) {
     );
   }
 
-  if (!repository.data) {
+  if (!repository) {
     return (
       <Card>
         <CardContent className="py-16 text-center">
@@ -117,10 +127,10 @@ export default function RepositoryDetailPage({ params }: PageProps) {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-semibold tracking-tight">
-                {repository.data.fullName}
+                {repository.fullName}
               </h1>
               <Badge variant={"outline"} className="gap-1">
-                {repository.data.private ? (
+                {repository.isPrivate ? (
                   <>
                     <Lock className="size-3" />
                     Private
@@ -134,7 +144,7 @@ export default function RepositoryDetailPage({ params }: PageProps) {
               </Badge>
             </div>
             <a
-              href={repository.data.htmlUrl}
+              href={repository.htmlUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1.5 mt-1"
@@ -151,7 +161,10 @@ export default function RepositoryDetailPage({ params }: PageProps) {
           disabled={pullRequests.isFetching}
         >
           <RefreshCw
-            className={cn("size-4", pullRequests.isFetching && "animate-spin")}
+            className={cn(
+              "size-4",
+              pullRequests.isFetching && "animate-spin",
+            )}
           />
         </Button>
       </div>
@@ -233,14 +246,36 @@ export default function RepositoryDetailPage({ params }: PageProps) {
             </CardContent>
           </Card>
         ) : (
-          pullRequests.data?.map((pr) => (
-            <PullRequestCard
-              key={pr.id}
-              pr={pr}
-              repositoryId={id}
-              linearIssue={linearIssues.data?.[pr.number] ?? null}
-            />
-          ))
+          pullRequests.data?.map(
+            (pr: {
+              id: number;
+              number: number;
+              title: string;
+              state: "open" | "closed";
+              draft: boolean;
+              htmlUrl: string;
+              author: { login: string; avatarUrl: string };
+              headRef: string;
+              baseRef: string;
+              additions: number;
+              deletions: number;
+              changedFiles: number;
+              createdAt: string;
+              mergedAt: string | null;
+              review: { status: string; _creationTime: number } | null;
+            }) => (
+              <PullRequestCard
+                key={pr.id}
+                pr={pr}
+                repositoryId={repoId}
+                linearIssue={
+                  (linearIssues.data as Record<number, unknown> | undefined)?.[
+                    pr.number
+                  ] ?? null
+                }
+              />
+            ),
+          )
         )}
       </div>
     </div>
@@ -263,14 +298,27 @@ interface PullRequestCardProps {
     changedFiles: number;
     createdAt: string;
     mergedAt: string | null;
-    review: { status: string; createdAt: Date } | null;
+    review: { status: string; _creationTime: number } | null;
   };
   repositoryId: string;
-  linearIssue: LinearIssueInfo | null;
+  linearIssue: unknown;
 }
 
-function PullRequestCard({ pr, repositoryId, linearIssue }: PullRequestCardProps) {
+function PullRequestCard({
+  pr,
+  repositoryId,
+  linearIssue,
+}: PullRequestCardProps) {
   const isMerged = pr.state === "closed" && pr.mergedAt !== null;
+  const typedLinearIssue = linearIssue as {
+    id: string;
+    identifier: string;
+    title: string;
+    url: string;
+    state: { name: string; color: string; type: string } | null;
+    priority: number;
+    assignee: { name: string; avatarUrl: string | null } | null;
+  } | null;
 
   return (
     <Card className="group hover:border-border transition-all">
@@ -322,10 +370,10 @@ function PullRequestCard({ pr, repositoryId, linearIssue }: PullRequestCardProps
                   <Clock className="size-3" />
                   {formatDate(pr.createdAt)}
                 </span>
-                {linearIssue && (
+                {typedLinearIssue && (
                   <>
                     <span className="text-muted-foreground/40">•</span>
-                    <LinearIssueBadge issue={linearIssue} compact />
+                    <LinearIssueBadge issue={typedLinearIssue} compact />
                   </>
                 )}
               </div>
@@ -406,7 +454,12 @@ function ReviewStatusBadge({ status }: { status: string }) {
 
   return (
     <Badge className={config.className}>
-      <Icon className={cn("size-3", config.spin && "animate-spin")} />
+      <Icon
+        className={cn(
+          "size-3",
+          "spin" in config && config.spin && "animate-spin",
+        )}
+      />
       {config.label}
     </Badge>
   );

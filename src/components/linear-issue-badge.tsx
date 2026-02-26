@@ -1,6 +1,14 @@
 "use client";
 
-import type { LinearIssueInfo } from "@/server/services/linear";
+interface LinearIssueInfo {
+  id: string;
+  identifier: string;
+  title: string;
+  url: string;
+  state: { name: string; color: string; type: string } | null;
+  priority: number;
+  assignee: { name: string; avatarUrl: string | null } | null;
+}
 
 interface LinearIssueBadgeProps {
   issue: LinearIssueInfo;

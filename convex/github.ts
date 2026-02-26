@@ -1,4 +1,5 @@
-import { db } from "@/server/db";
+// GitHub API helpers — pure functions that call external APIs.
+// These are used by actions, not queries/mutations.
 
 export interface GitHubPullRequestFile {
   sha: string;
@@ -58,22 +59,6 @@ export interface GitHubRepo {
   updated_at: string;
 }
 
-export async function getGitHubAccessToken(
-  userId: string,
-): Promise<string | null> {
-  const account = await db.account.findFirst({
-    where: {
-      userId,
-      providerId: "github",
-    },
-    select: {
-      accessToken: true,
-    },
-  });
-
-  return account?.accessToken ?? null;
-}
-
 export async function fetchGitHubRepos(
   accessToken: string,
 ): Promise<GitHubRepo[]> {
@@ -127,8 +112,6 @@ export async function fetchPullRequests(
 
   const pulls = (await response.json()) as GitHubPullRequest[];
 
-  // The list endpoint doesn't include additions/deletions/changed_files,
-  // so we fetch each PR individually to get those stats.
   const detailed = await Promise.all(
     pulls.map((pr) => fetchPullRequest(accessToken, owner, repo, pr.number)),
   );

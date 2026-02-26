@@ -2,7 +2,10 @@
 
 import { use, useState } from "react";
 import Link from "next/link";
-import { trpc } from "@/lib/trpc/client";
+import { useQuery } from "convex/react";
+import { api } from "../../../../../../../convex/_generated/api";
+import { useConvexAction } from "@/hooks/useConvexAction";
+import { useConvex } from "convex/react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +23,6 @@ import {
   XCircle,
   CheckCircle,
   Loader2,
-  Sparkles,
   GitBranch,
   ArrowRight,
   Wand2,
@@ -38,6 +40,7 @@ import { cn } from "@/lib/utils";
 import { DiffViewer } from "@/components/diff-viewer";
 import { ReviewResult } from "@/components/review-result";
 import { LinearIssueBadge } from "@/components/linear-issue-badge";
+import type { Id } from "../../../../../../../convex/_generated/dataModel";
 
 type PageProps = {
   params: Promise<{ id: string; prNumber: string }>;
@@ -45,60 +48,64 @@ type PageProps = {
 
 export default function PullRequestDetailPage({ params }: PageProps) {
   const { id, prNumber } = use(params);
+  const repoId = id as Id<"repositories">;
   const prNum = parseInt(prNumber, 10);
   const [activeTab, setActiveTab] = useState<"review" | "files">("review");
   const [selectedProviderId, setSelectedProviderId] = useState<
     string | undefined
   >(undefined);
+  const [isTriggering, setIsTriggering] = useState(false);
 
-  const pr = trpc.pullRequest.get.useQuery(
-    { repositoryId: id, prNumber: prNum },
-    { enabled: !isNaN(prNum) },
+  const convex = useConvex();
+
+  const pr = useConvexAction(
+    api.pullRequests.get,
+    !isNaN(prNum) ? { repositoryId: repoId, prNumber: prNum } : "skip",
   );
 
-  const files = trpc.pullRequest.files.useQuery(
-    { repositoryId: id, prNumber: prNum },
-    { enabled: !isNaN(prNum) },
+  const files = useConvexAction(
+    api.pullRequests.files,
+    !isNaN(prNum) ? { repositoryId: repoId, prNumber: prNum } : "skip",
   );
 
-  const latestReview = trpc.review.getLatestForPR.useQuery(
-    { repositoryId: id, prNumber: prNum },
-    {
-      enabled: !isNaN(prNum),
-      refetchInterval: (query) => {
-        const status = query.state.data?.status;
-        if (status === "PENDING" || status === "PROCESSING") {
-          return 2000;
-        }
-        return false;
-      },
-    },
-  );
-
-  const availableModels = trpc.review.availableModels.useQuery();
-
-  const selectedModel =
-    availableModels.data?.find((m) => m.id === selectedProviderId) ??
-    availableModels.data?.[0];
-
-  const linearIssue = trpc.linear.getIssueForPR.useQuery(
-    {
-      branchName: pr.data?.headRef ?? "",
-      prTitle: pr.data?.title ?? "",
-    },
-    { enabled: !!pr.data },
-  );
-
-  const triggerReview = trpc.review.trigger.useMutation({
-    onSuccess: () => {
-      latestReview.refetch();
-      pr.refetch();
-    },
+  // This is a Convex query — it's reactive and auto-updates! No polling needed.
+  const latestReview = useQuery(api.reviews.getLatestForPR, {
+    repositoryId: repoId,
+    prNumber: prNum,
   });
 
+  const availableModels = useQuery(api.reviews.availableModels);
+
+  const selectedModel =
+    availableModels?.find((m) => m.id === selectedProviderId) ??
+    availableModels?.[0];
+
+  const linearIssue = useConvexAction(
+    api.linear.getIssueForPR,
+    pr.data
+      ? {
+          branchName: pr.data.headRef,
+          prTitle: pr.data.title,
+        }
+      : "skip",
+  );
+
+  const handleTriggerReview = async () => {
+    setIsTriggering(true);
+    try {
+      await convex.action(api.reviews.trigger, {
+        repositoryId: repoId,
+        prNumber: prNum,
+        providerId: selectedModel?.id,
+      });
+    } finally {
+      setIsTriggering(false);
+    }
+  };
+
   const isReviewing =
-    latestReview.data?.status === "PENDING" ||
-    latestReview.data?.status === "PROCESSING";
+    latestReview?.status === "PENDING" ||
+    latestReview?.status === "PROCESSING";
 
   if (pr.isLoading) {
     return (
@@ -250,10 +257,14 @@ export default function PullRequestDetailPage({ params }: PageProps) {
               <div className="flex-1 p-4">
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-lg bg-muted">
-                    {linearIssue.data.state && (
+                    {(linearIssue.data as { state?: { color: string } }).state && (
                       <span
                         className="block size-4 rounded"
-                        style={{ backgroundColor: linearIssue.data.state.color }}
+                        style={{
+                          backgroundColor: (
+                            linearIssue.data as { state: { color: string } }
+                          ).state.color,
+                        }}
                       />
                     )}
                   </div>
@@ -262,11 +273,41 @@ export default function PullRequestDetailPage({ params }: PageProps) {
                       Linear Issue
                     </p>
                     <div className="flex items-center gap-2 text-sm">
-                      <LinearIssueBadge issue={linearIssue.data} />
+                      <LinearIssueBadge
+                        issue={
+                          linearIssue.data as {
+                            id: string;
+                            identifier: string;
+                            title: string;
+                            url: string;
+                            state: {
+                              name: string;
+                              color: string;
+                              type: string;
+                            } | null;
+                            priority: number;
+                            assignee: {
+                              name: string;
+                              avatarUrl: string | null;
+                            } | null;
+                          }
+                        }
+                      />
                     </div>
-                    {linearIssue.data.assignee && (
+                    {(
+                      linearIssue.data as {
+                        assignee?: { name: string } | null;
+                      }
+                    ).assignee && (
                       <p className="text-xs text-muted-foreground mt-1">
-                        Assigned to {linearIssue.data.assignee.name}
+                        Assigned to{" "}
+                        {
+                          (
+                            linearIssue.data as {
+                              assignee: { name: string };
+                            }
+                          ).assignee.name
+                        }
                       </p>
                     )}
                   </div>
@@ -298,15 +339,15 @@ export default function PullRequestDetailPage({ params }: PageProps) {
             <div className="px-6 py-4 flex items-center gap-3">
               <div className="flex items-center gap-2 rounded-lg px-3 py-1.5">
                 <ReviewStatusBadge
-                  status={latestReview.data?.status ?? null}
+                  status={latestReview?.status ?? null}
                   completedAt={
-                    latestReview.data?.status === "COMPLETED"
-                      ? latestReview.data.createdAt
+                    latestReview?.status === "COMPLETED"
+                      ? latestReview._creationTime
                       : null
                   }
                   aiModel={
-                    latestReview.data?.status === "COMPLETED"
-                      ? (latestReview.data.aiModel ?? undefined)
+                    latestReview?.status === "COMPLETED"
+                      ? (latestReview.aiModel ?? undefined)
                       : undefined
                   }
                 />
@@ -316,21 +357,14 @@ export default function PullRequestDetailPage({ params }: PageProps) {
                     <Button
                       variant="outline"
                       size={"sm"}
-                      onClick={() => {
-                        triggerReview.mutate({
-                          repositoryId: id,
-                          prNumber: prNum,
-                          providerId: selectedModel?.id,
-                        });
-                      }}
+                      onClick={handleTriggerReview}
                       disabled={
-                        triggerReview.isPending ||
-                        !availableModels.data?.length
+                        isTriggering || !availableModels?.length
                       }
                       className="gap-1.5 h-auto py-1 px-2 text-xs rounded-r-none border-r-0"
                     >
                       <Wand2 />
-                      {latestReview.data ? "Re-run" : "Review"}
+                      {latestReview ? "Re-run" : "Review"}
                     </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -338,8 +372,7 @@ export default function PullRequestDetailPage({ params }: PageProps) {
                           variant="outline"
                           size={"sm"}
                           disabled={
-                            triggerReview.isPending ||
-                            !availableModels.data?.length
+                            isTriggering || !availableModels?.length
                           }
                           className="h-auto py-1 px-1.5 text-xs rounded-l-none"
                         >
@@ -347,7 +380,7 @@ export default function PullRequestDetailPage({ params }: PageProps) {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="min-w-36">
-                        {availableModels.data?.map((model) => (
+                        {availableModels?.map((model) => (
                           <DropdownMenuItem
                             key={model.id}
                             onClick={() => setSelectedProviderId(model.id)}
@@ -379,9 +412,9 @@ export default function PullRequestDetailPage({ params }: PageProps) {
             icon={ScanSearch}
             label="Reviews"
             count={
-              latestReview.data?.status === "COMPLETED"
-                ? Array.isArray(latestReview.data.comments)
-                  ? latestReview.data.comments.length
+              latestReview?.status === "COMPLETED"
+                ? Array.isArray(latestReview.comments)
+                  ? latestReview.comments.length
                   : 0
                 : 0
             }
@@ -400,8 +433,18 @@ export default function PullRequestDetailPage({ params }: PageProps) {
       {/* Tab Content */}
       {activeTab === "review" && (
         <div>
-          {latestReview.data ? (
-            <ReviewResult review={latestReview.data} />
+          {latestReview ? (
+            <ReviewResult
+              review={{
+                id: latestReview._id,
+                status: latestReview.status,
+                summary: latestReview.summary ?? null,
+                riskScore: latestReview.riskScore ?? null,
+                comments: latestReview.comments,
+                error: latestReview.error ?? null,
+                createdAt: new Date(latestReview._creationTime),
+              }}
+            />
           ) : (
             <Card>
               <CardContent className="py-16 text-center">
@@ -415,16 +458,8 @@ export default function PullRequestDetailPage({ params }: PageProps) {
                 </p>
                 <Button
                   className="mt-6"
-                  onClick={() =>
-                    triggerReview.mutate({
-                      repositoryId: id,
-                      prNumber: prNum,
-                      providerId: selectedModel?.id,
-                    })
-                  }
-                  disabled={
-                    triggerReview.isPending || !availableModels.data?.length
-                  }
+                  onClick={handleTriggerReview}
+                  disabled={isTriggering || !availableModels?.length}
                 >
                   Run AI Review
                 </Button>
@@ -596,12 +631,12 @@ function ReviewStatusBadge({
   aiModel,
 }: {
   status: string | null;
-  completedAt?: Date | null;
+  completedAt?: number | null;
   aiModel?: string;
 }) {
-  const getTimeAgo = (date: Date) => {
-    const now = new Date();
-    const diffMs = now.getTime() - new Date(date).getTime();
+  const getTimeAgo = (timestamp: number) => {
+    const now = Date.now();
+    const diffMs = now - timestamp;
     const diffMin = Math.floor(diffMs / (1000 * 60));
     const diffHours = Math.floor(diffMin / 60);
     const diffDays = Math.floor(diffHours / 24);
@@ -665,7 +700,12 @@ function ReviewStatusBadge({
 
   return (
     <Badge variant="outline" className={cn("gap-1.5 border", config.className)}>
-      <Icon className={cn("h-3 w-3", config.spin && "animate-spin")} />
+      <Icon
+        className={cn(
+          "h-3 w-3",
+          "spin" in config && config.spin && "animate-spin",
+        )}
+      />
       {config.label}
     </Badge>
   );

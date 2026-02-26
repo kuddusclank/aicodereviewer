@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { trpc } from "@/lib/trpc/client";
+import { useQuery } from "convex/react";
+import { useConvex } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,45 +18,48 @@ import {
   AlertTriangle,
   FileText,
   ExternalLink,
-  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { Id } from "../../../../convex/_generated/dataModel";
 
 type ReviewStatus = "all" | "COMPLETED" | "PROCESSING" | "PENDING" | "FAILED";
 
 export default function ReviewsPage() {
   const [statusFilter, setStatusFilter] = useState<ReviewStatus>("all");
+  const [isRetrying, setIsRetrying] = useState(false);
 
-  const reviews = trpc.review.list.useQuery(
-    { limit: 50 },
-    {
-      refetchInterval: (query) => {
-        const hasProcessing = query.state.data?.some(
-          (r) => r.status === "PENDING" || r.status === "PROCESSING",
-        );
-        return hasProcessing ? 3000 : false;
-      },
-    },
-  );
+  const convex = useConvex();
 
-  const triggerReview = trpc.review.trigger.useMutation({
-    onSuccess: () => {
-      reviews.refetch();
-    },
-  });
+  // Convex query is reactive — auto-updates when reviews change. No polling needed!
+  const reviews = useQuery(api.reviews.list, { limit: 50 });
 
-  const filteredReviews = reviews.data?.filter(
+  const handleRetry = async (
+    repositoryId: Id<"repositories">,
+    prNumber: number,
+  ) => {
+    setIsRetrying(true);
+    try {
+      await convex.action(api.reviews.trigger, {
+        repositoryId,
+        prNumber,
+      });
+    } finally {
+      setIsRetrying(false);
+    }
+  };
+
+  const filteredReviews = reviews?.filter(
     (r) => statusFilter === "all" || r.status === statusFilter,
   );
 
   const statusCounts = {
-    all: reviews.data?.length ?? 0,
+    all: reviews?.length ?? 0,
     COMPLETED:
-      reviews.data?.filter((r) => r.status === "COMPLETED").length ?? 0,
+      reviews?.filter((r) => r.status === "COMPLETED").length ?? 0,
     PROCESSING:
-      reviews.data?.filter((r) => r.status === "PROCESSING").length ?? 0,
-    PENDING: reviews.data?.filter((r) => r.status === "PENDING").length ?? 0,
-    FAILED: reviews.data?.filter((r) => r.status === "FAILED").length ?? 0,
+      reviews?.filter((r) => r.status === "PROCESSING").length ?? 0,
+    PENDING: reviews?.filter((r) => r.status === "PENDING").length ?? 0,
+    FAILED: reviews?.filter((r) => r.status === "FAILED").length ?? 0,
   };
 
   return (
@@ -66,16 +71,6 @@ export default function ReviewsPage() {
             {statusCounts.all} total reviews
           </p>
         </div>
-        <Button
-          variant={"ghost"}
-          size={"icon-sm"}
-          onClick={() => reviews.refetch()}
-          disabled={reviews.isFetching}
-        >
-          <RefreshCw
-            className={cn("size-4", reviews.isFetching && "animate-spin")}
-          />
-        </Button>
       </div>
 
       <div className="flex items-center gap-2 flex-wrap p-1 bg-muted/50 rounded-lg w-fit">
@@ -110,18 +105,12 @@ export default function ReviewsPage() {
         )}
       </div>
 
-      {reviews.isLoading ? (
+      {reviews === undefined ? (
         <div>
           {[...Array(5)].map((_, i) => (
             <Skeleton key={i} className="h-28 w-full rounded-xl" />
           ))}
         </div>
-      ) : reviews.error ? (
-        <Card className="border-destructive/50">
-          <CardContent className="py-8 text-center">
-            <p className="text-destructive">{reviews.error.message}</p>
-          </CardContent>
-        </Card>
       ) : filteredReviews?.length === 0 ? (
         <Card>
           <CardContent className="py-16 text-center">
@@ -143,15 +132,15 @@ export default function ReviewsPage() {
         <div className="space-y-3">
           {filteredReviews?.map((review) => (
             <ReviewCard
-              key={review.id}
+              key={review._id}
               review={review}
               onRetry={
-                review.status === "FAILED"
+                review.status === "FAILED" && review.repository
                   ? () =>
-                      triggerReview.mutate({
-                        repositoryId: review.repository.id,
-                        prNumber: review.prNumber,
-                      })
+                      handleRetry(
+                        review.repository!._id,
+                        review.prNumber,
+                      )
                   : undefined
               }
             />
@@ -164,20 +153,20 @@ export default function ReviewsPage() {
 
 interface ReviewCardProps {
   review: {
-    id: string;
+    _id: Id<"reviews">;
     prNumber: number;
     prTitle: string;
     prUrl: string;
     status: string;
-    summary: string | null;
-    riskScore: number | null;
+    summary?: string;
+    riskScore?: number;
     comments: unknown;
-    error: string | null;
-    createdAt: Date;
+    error?: string;
+    _creationTime: number;
     repository: {
-      id: string;
+      _id: Id<"repositories">;
       fullName: string;
-    };
+    } | null;
   };
   onRetry?: () => void;
 }
@@ -217,29 +206,31 @@ function ReviewCard({ review, onRetry }: ReviewCardProps) {
             </div>
             <div className="min-w-0 flex-1 space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <Link
-                  href={`/repos/${review.repository.id}/pr/${review.prNumber}`}
-                  className="font-medium hover:text-primary transition-colors truncate"
-                >
-                  {review.prTitle}
-                </Link>
+                {review.repository && (
+                  <Link
+                    href={`/repos/${review.repository._id}/pr/${review.prNumber}`}
+                    className="font-medium hover:text-primary transition-colors truncate"
+                  >
+                    {review.prTitle}
+                  </Link>
+                )}
                 <StatusBadge status={review.status} />
               </div>
               <div className="flex items-center gap-3 text-sm text-muted-foreground">
                 <span className="font-medium">
-                  {review.repository.fullName}
+                  {review.repository?.fullName ?? "Unknown"}
                 </span>
                 <span className="text-muted-foreground/50">•</span>
                 <span>#{review.prNumber}</span>
                 <span className="text-muted-foreground/50">•</span>
                 <span className="flex items-center gap-1">
                   <Clock className="h-3 w-3" />
-                  {formatRelativeTime(review.createdAt)}
+                  {formatRelativeTime(review._creationTime)}
                 </span>
               </div>
               {review.status === "COMPLETED" && (
                 <div className="flex items-center gap-4 pt-1">
-                  {review.riskScore !== null && (
+                  {review.riskScore !== undefined && (
                     <RiskScoreBadge score={review.riskScore} />
                   )}
                   {commentCount > 0 && (
@@ -281,15 +272,15 @@ function ReviewCard({ review, onRetry }: ReviewCardProps) {
             </a>
             {review.status === "FAILED" && onRetry ? (
               <Button onClick={onRetry}>Retry</Button>
-            ) : (
+            ) : review.repository ? (
               <Link
-                href={`/repos/${review.repository.id}/pr/${review.prNumber}`}
+                href={`/repos/${review.repository._id}/pr/${review.prNumber}`}
               >
                 <Button size={"sm"} variant={"outline"}>
                   {review.status === "COMPLETED" ? "Completed" : "Pending"}
                 </Button>
               </Link>
-            )}
+            ) : null}
           </div>
         </div>
       </CardContent>
@@ -415,9 +406,9 @@ function getRiskConfig(score: number) {
   };
 }
 
-function formatRelativeTime(date: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - new Date(date).getTime();
+function formatRelativeTime(timestamp: number): string {
+  const now = Date.now();
+  const diffMs = now - timestamp;
   const diffMins = Math.floor(diffMs / (1000 * 60));
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -428,7 +419,7 @@ function formatRelativeTime(date: Date): string {
   if (diffDays === 1) return "Yesterday";
   if (diffDays < 7) return `${diffDays}d ago`;
 
-  return new Date(date).toLocaleDateString("en-US", {
+  return new Date(timestamp).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
   });

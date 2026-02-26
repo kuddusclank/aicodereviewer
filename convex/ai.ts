@@ -1,5 +1,4 @@
 import OpenAI from "openai";
-import { z } from "zod";
 
 // --- Provider abstraction ---
 
@@ -41,22 +40,6 @@ export function getAvailableProviders(): { id: string; name: string }[] {
   }));
 }
 
-export function getDefaultProvider(): AIProvider | null {
-  for (const config of PROVIDER_CONFIGS) {
-    const apiKey = process.env[config.envKey];
-    if (apiKey) {
-      return {
-        id: config.id,
-        name: config.name,
-        model: config.model,
-        baseURL: config.baseURL,
-        apiKey,
-      };
-    }
-  }
-  return null;
-}
-
 function getProvider(providerId?: string): AIProvider {
   if (providerId) {
     const config = PROVIDER_CONFIGS.find((p) => p.id === providerId);
@@ -78,49 +61,39 @@ function getProvider(providerId?: string): AIProvider {
     };
   }
 
-  const defaultProvider = getDefaultProvider();
-  if (!defaultProvider) {
-    throw new Error(
-      "No AI provider configured. Set OPENAI_API_KEY, GEMINI_API_KEY, or QWEN_API_KEY.",
-    );
+  for (const config of PROVIDER_CONFIGS) {
+    const apiKey = process.env[config.envKey];
+    if (apiKey) {
+      return {
+        id: config.id,
+        name: config.name,
+        model: config.model,
+        baseURL: config.baseURL,
+        apiKey,
+      };
+    }
   }
-  return defaultProvider;
+  throw new Error(
+    "No AI provider configured. Set OPENAI_API_KEY, GEMINI_API_KEY, or QWEN_API_KEY.",
+  );
 }
 
-const clientCache = new Map<string, OpenAI>();
+// --- Types ---
 
-function getClientForProvider(provider: AIProvider): OpenAI {
-  const cacheKey = provider.id;
-  let client = clientCache.get(cacheKey);
-  if (!client) {
-    client = new OpenAI({
-      apiKey: provider.apiKey,
-      ...(provider.baseURL && { baseURL: provider.baseURL }),
-    });
-    clientCache.set(cacheKey, client);
-  }
-  return client;
+export interface ReviewComment {
+  file: string;
+  line: number;
+  severity: "critical" | "high" | "medium" | "low";
+  category: "bug" | "security" | "performance" | "style" | "suggestion";
+  message: string;
+  suggestion?: string;
 }
 
-// --- Schemas ---
-
-export const ReviewCommentSchema = z.object({
-  file: z.string(),
-  line: z.number(),
-  severity: z.enum(["critical", "high", "medium", "low"]),
-  category: z.enum(["bug", "security", "performance", "style", "suggestion"]),
-  message: z.string(),
-  suggestion: z.string().optional(),
-});
-
-export const ReviewResultSchema = z.object({
-  summary: z.string(),
-  riskScore: z.number().min(0).max(100),
-  comments: z.array(ReviewCommentSchema),
-});
-
-export type ReviewComment = z.infer<typeof ReviewCommentSchema>;
-export type ReviewResult = z.infer<typeof ReviewResultSchema>;
+export interface ReviewResult {
+  summary: string;
+  riskScore: number;
+  comments: ReviewComment[];
+}
 
 interface FileChange {
   filename: string;
@@ -192,7 +165,11 @@ export async function reviewCode(
 **Changes:**
 ${diffContent}`;
 
-  const client = getClientForProvider(provider);
+  const client = new OpenAI({
+    apiKey: provider.apiKey,
+    ...(provider.baseURL && { baseURL: provider.baseURL }),
+  });
+
   const response = await client.chat.completions.create({
     model: provider.model,
     messages: [
@@ -209,8 +186,7 @@ ${diffContent}`;
     throw new Error("No response from AI");
   }
 
-  const parsed = JSON.parse(content);
-  const validated = ReviewResultSchema.parse(parsed);
+  const parsed = JSON.parse(content) as ReviewResult;
 
-  return { ...validated, aiModel: provider.name };
+  return { ...parsed, aiModel: provider.name };
 }

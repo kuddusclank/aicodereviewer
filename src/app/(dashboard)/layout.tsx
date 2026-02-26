@@ -1,5 +1,5 @@
 import { Header } from "@/components/header";
-import { auth } from "@/server/auth";
+import { auth } from "@/lib/auth-server";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 

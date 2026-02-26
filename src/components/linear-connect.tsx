@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { trpc } from "@/lib/trpc/client";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,28 +20,30 @@ import { Loader2 } from "lucide-react";
 export function LinearConnect({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [apiKey, setApiKey] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
-  const utils = trpc.useUtils();
-  const isConnected = trpc.linear.isConnected.useQuery(undefined, {
-    enabled: open,
-  });
+  // Convex query is reactive — auto-updates when the mutation changes the data
+  const isConnected = useQuery(api.linear.isConnected);
+  const saveApiKeyMutation = useMutation(api.linear.saveApiKey);
 
-  const saveApiKey = trpc.linear.saveApiKey.useMutation({
-    onSuccess: () => {
-      utils.linear.isConnected.invalidate();
-      utils.linear.getIssuesForPRs.invalidate();
-      utils.linear.getIssueForPR.invalidate();
-      setApiKey("");
-    },
-  });
-
-  const handleConnect = () => {
+  const handleConnect = async () => {
     if (!apiKey.trim()) return;
-    saveApiKey.mutate({ apiKey: apiKey.trim() });
+    setIsSaving(true);
+    try {
+      await saveApiKeyMutation({ apiKey: apiKey.trim() });
+      setApiKey("");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleDisconnect = () => {
-    saveApiKey.mutate({ apiKey: null });
+  const handleDisconnect = async () => {
+    setIsSaving(true);
+    try {
+      await saveApiKeyMutation({ apiKey: null });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -55,7 +58,7 @@ export function LinearConnect({ children }: { children: React.ReactNode }) {
           </DialogDescription>
         </DialogHeader>
 
-        {isConnected.data?.connected ? (
+        {isConnected?.connected ? (
           <div className="space-y-4">
             <div className="flex items-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">
               <span className="size-2 rounded-full bg-emerald-500" />
@@ -65,11 +68,9 @@ export function LinearConnect({ children }: { children: React.ReactNode }) {
               <Button
                 variant="destructive"
                 onClick={handleDisconnect}
-                disabled={saveApiKey.isPending}
+                disabled={isSaving}
               >
-                {saveApiKey.isPending && (
-                  <Loader2 className="size-4 animate-spin" />
-                )}
+                {isSaving && <Loader2 className="size-4 animate-spin" />}
                 Disconnect
               </Button>
             </DialogFooter>
@@ -90,11 +91,9 @@ export function LinearConnect({ children }: { children: React.ReactNode }) {
             <DialogFooter>
               <Button
                 onClick={handleConnect}
-                disabled={!apiKey.trim() || saveApiKey.isPending}
+                disabled={!apiKey.trim() || isSaving}
               >
-                {saveApiKey.isPending && (
-                  <Loader2 className="size-4 animate-spin" />
-                )}
+                {isSaving && <Loader2 className="size-4 animate-spin" />}
                 Connect
               </Button>
             </DialogFooter>

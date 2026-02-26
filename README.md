@@ -1,36 +1,129 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Code Reviewer
+
+A full-stack Next.js app that connects to GitHub repositories and performs AI-powered code reviews on pull requests. Supports multiple AI providers (OpenAI, Google Gemini, Alibaba Qwen) and integrates with Linear for issue tracking.
+
+## Tech Stack
+
+- **Frontend:** Next.js 16 (App Router), React 19, Tailwind CSS v4, shadcn/ui
+- **Backend:** [Convex](https://convex.dev) (real-time database, server functions, scheduling)
+- **Auth:** [Better Auth](https://better-auth.com) via `@convex-dev/better-auth` (email/password + GitHub OAuth)
+- **AI:** OpenAI, Google Gemini, Alibaba Qwen (multi-provider, OpenAI-compatible SDK)
+- **Integrations:** GitHub API, Linear API
+
+## Features
+
+- Connect GitHub repositories via OAuth
+- Browse pull requests with stats (additions, deletions, changed files)
+- Trigger AI-powered code reviews with model selection
+- Real-time review status updates (no polling — powered by Convex reactivity)
+- Structured review output: risk score, severity breakdown, actionable comments
+- Diff viewer for changed files
+- Automatic reviews via GitHub webhooks
+- Linear issue linking from PR titles and branch names
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18+
+- pnpm
+- A [Convex](https://convex.dev) account
+
+### Setup
+
+1. Clone the repository and install dependencies:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Set up Convex:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npx convex dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+This will prompt you to create a Convex project, deploy the schema, and generate types.
 
-## Learn More
+3. Set Convex environment variables:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npx convex env set BETTER_AUTH_SECRET "your-secret"
+npx convex env set BETTER_AUTH_URL "http://localhost:3000"
+npx convex env set GITHUB_CLIENT_ID "your-github-client-id"
+npx convex env set GITHUB_CLIENT_SECRET "your-github-client-secret"
+npx convex env set GITHUB_WEBHOOK_SECRET "your-webhook-secret"
+npx convex env set OPENAI_API_KEY "your-openai-key"
+# Optional:
+npx convex env set GEMINI_API_KEY "your-gemini-key"
+npx convex env set QWEN_API_KEY "your-qwen-key"
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+4. Create a `.env.local` file:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```env
+NEXT_PUBLIC_CONVEX_URL=<your convex deployment url>
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+BETTER_AUTH_SECRET=your-secret
+BETTER_AUTH_URL=http://localhost:3000
+```
 
-## Deploy on Vercel
+5. Run the dev servers (in separate terminals):
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+pnpm convex:dev    # Convex backend
+pnpm dev           # Next.js frontend
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Open [http://localhost:3000](http://localhost:3000) to use the app.
+
+### GitHub OAuth Setup
+
+1. Create a GitHub OAuth App at [GitHub Developer Settings](https://github.com/settings/developers)
+2. Set the callback URL to `http://localhost:3000/api/auth/callback/github`
+3. Add the Client ID and Secret to your Convex environment variables
+
+### GitHub Webhooks
+
+To enable automatic reviews on PR events:
+
+1. In your GitHub repository settings, add a webhook
+2. Set the URL to `https://<your-deployment>.convex.site/webhooks/github`
+3. Set the content type to `application/json`
+4. Set the secret to match your `GITHUB_WEBHOOK_SECRET`
+5. Select the "Pull requests" event
+
+## Architecture
+
+```
+src/app/                    # Next.js App Router
+  ├── (auth)/               # Sign-in, sign-up pages
+  ├── (dashboard)/          # Protected pages (repos, reviews)
+  └── api/auth/             # Better Auth handler
+
+convex/                     # Convex backend
+  ├── schema.ts             # Database schema
+  ├── auth.ts               # Better Auth configuration
+  ├── repositories.ts       # Repo CRUD operations
+  ├── pullRequests.ts       # GitHub PR fetching (actions)
+  ├── reviews.ts            # Review management (reactive queries)
+  ├── reviewWorker.ts       # Background review processing
+  ├── linear.ts             # Linear issue integration
+  ├── webhooks.ts           # GitHub webhook handler
+  ├── github.ts             # GitHub API helpers
+  └── ai.ts                 # Multi-provider AI pipeline
+```
+
+## Scripts
+
+| Command | Description |
+|---|---|
+| `pnpm dev` | Start Next.js dev server |
+| `pnpm build` | Production build |
+| `pnpm lint` | Run ESLint |
+| `pnpm convex:dev` | Start Convex dev server |
+| `pnpm convex:deploy` | Deploy Convex to production |
+
+## License
+
+MIT
