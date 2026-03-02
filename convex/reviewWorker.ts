@@ -2,9 +2,12 @@ import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { getGitHubAccessToken } from "./helpers";
-import { fetchPullRequestFiles, fetchPullRequest } from "./github";
+import {
+  fetchPullRequestFiles,
+  fetchPullRequest,
+  postReviewToGitHub,
+} from "./github";
 import { reviewCode } from "./ai";
-import ba from "./auth";
 
 export const processReview = internalAction({
   args: {
@@ -89,6 +92,30 @@ export const processReview = internalAction({
         comments: reviewResult.comments,
         aiModel: reviewResult.aiModel,
       });
+
+      // Auto-post to GitHub if enabled
+      if (repository.autoPostToGitHub) {
+        try {
+          await postReviewToGitHub(
+            accessToken,
+            owner,
+            repo,
+            prNumber,
+            pr.head.sha,
+            reviewResult.summary,
+            reviewResult.riskScore,
+            reviewResult.comments,
+          );
+          await ctx.runMutation(internal.reviews.updateReviewStatus, {
+            reviewId,
+            status: "COMPLETED",
+            postedToGitHub: true,
+          });
+        } catch (postError) {
+          // Don't fail the review if posting fails — just log it
+          console.error("Failed to post review to GitHub:", postError);
+        }
+      }
     } catch (error) {
       await ctx.runMutation(internal.reviews.updateReviewStatus, {
         reviewId,

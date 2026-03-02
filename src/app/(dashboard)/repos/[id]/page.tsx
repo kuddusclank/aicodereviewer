@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { cn, formatDate } from "@/lib/utils";
 import { LinearIssueBadge } from "@/components/linear-issue-badge";
+import { RepoSettings } from "@/components/repo-settings";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
 type PageProps = {
@@ -168,6 +169,13 @@ export default function RepositoryDetailPage({ params }: PageProps) {
           />
         </Button>
       </div>
+
+      <RepoSettings
+        repositoryId={repoId}
+        fullName={repository.fullName}
+        autoPostToGitHub={repository.autoPostToGitHub ?? false}
+        isPublic={repository.isPublic ?? false}
+      />
 
       <div className="border-b border-border/60">
         <div className="flex items-center gap-1">

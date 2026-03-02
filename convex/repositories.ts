@@ -102,6 +102,27 @@ export const connect = mutation({
   },
 });
 
+export const updateSettings = mutation({
+  args: {
+    id: v.id("repositories"),
+    autoPostToGitHub: v.optional(v.boolean()),
+    isPublic: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    const repo = await ctx.db.get(args.id);
+    if (!repo || repo.userId !== user.id) {
+      throw new Error("Repository not found");
+    }
+    const patch: Record<string, boolean> = {};
+    if (args.autoPostToGitHub !== undefined)
+      patch.autoPostToGitHub = args.autoPostToGitHub;
+    if (args.isPublic !== undefined) patch.isPublic = args.isPublic;
+    await ctx.db.patch(args.id, patch);
+    return { success: true };
+  },
+});
+
 export const disconnect = mutation({
   args: { id: v.id("repositories") },
   handler: async (ctx, args) => {

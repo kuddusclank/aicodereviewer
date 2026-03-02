@@ -27,6 +27,9 @@ export default function HomePage() {
 
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" asChild>
+              <Link href="/leaderboard">Leaderboard</Link>
+            </Button>
+            <Button variant="ghost" size="sm" asChild>
               <Link href="/sign-in">Sign in</Link>
             </Button>
             <Button size="sm" asChild>
@@ -217,6 +220,12 @@ export default function HomePage() {
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-6 text-sm text-muted-foreground">
           <span>© 2025 CodeReviewAI</span>
           <div className="flex items-center gap-6">
+            <Link
+              href="/leaderboard"
+              className="hover:text-foreground transition-colors"
+            >
+              Leaderboard
+            </Link>
             <Link
               href="/sign-in"
               className="hover:text-foreground transition-colors"

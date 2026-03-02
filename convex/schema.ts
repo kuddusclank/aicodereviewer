@@ -10,9 +10,12 @@ export default defineSchema({
     isPrivate: v.boolean(),
     htmlUrl: v.string(),
     updatedAt: v.float64(),
+    autoPostToGitHub: v.optional(v.boolean()),
+    isPublic: v.optional(v.boolean()),
   })
     .index("by_userId", ["userId"])
-    .index("by_githubId", ["githubId"]),
+    .index("by_githubId", ["githubId"])
+    .index("by_isPublic", ["isPublic"]),
 
   reviews: defineTable({
     repositoryId: v.id("repositories"),
@@ -31,6 +34,7 @@ export default defineSchema({
     comments: v.optional(v.any()),
     aiModel: v.optional(v.string()),
     error: v.optional(v.string()),
+    postedToGitHub: v.optional(v.boolean()),
   })
     .index("by_repositoryId", ["repositoryId"])
     .index("by_userId", ["userId"])

@@ -29,6 +29,7 @@ import {
   ScanSearch,
   ChevronDown,
   Bot,
+  Github,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -90,6 +91,8 @@ export default function PullRequestDetailPage({ params }: PageProps) {
       : "skip",
   );
 
+  const [isPostingToGitHub, setIsPostingToGitHub] = useState(false);
+
   const handleTriggerReview = async () => {
     setIsTriggering(true);
     try {
@@ -100,6 +103,18 @@ export default function PullRequestDetailPage({ params }: PageProps) {
       });
     } finally {
       setIsTriggering(false);
+    }
+  };
+
+  const handlePostToGitHub = async () => {
+    if (!latestReview?._id) return;
+    setIsPostingToGitHub(true);
+    try {
+      await convex.action(api.reviews.postToGitHub, {
+        reviewId: latestReview._id,
+      });
+    } finally {
+      setIsPostingToGitHub(false);
     }
   };
 
@@ -351,6 +366,38 @@ export default function PullRequestDetailPage({ params }: PageProps) {
                       : undefined
                   }
                 />
+                {latestReview?.status === "COMPLETED" &&
+                  !latestReview.postedToGitHub && (
+                    <>
+                      <div className="h-4 w-px bg-border" />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handlePostToGitHub}
+                        disabled={isPostingToGitHub}
+                        className="gap-1.5 h-auto py-1 px-2 text-xs"
+                      >
+                        {isPostingToGitHub ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : (
+                          <Github className="size-3" />
+                        )}
+                        Post to GitHub
+                      </Button>
+                    </>
+                  )}
+                {latestReview?.postedToGitHub && (
+                  <>
+                    <div className="h-4 w-px bg-border" />
+                    <Badge
+                      variant="outline"
+                      className="gap-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-xs"
+                    >
+                      <Github className="size-3" />
+                      Posted
+                    </Badge>
+                  </>
+                )}
                 {!isReviewing && <div className="h-4 w-px bg-border" />}
                 {isReviewing ? null : (
                   <div className="flex items-center">

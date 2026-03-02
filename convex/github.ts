@@ -142,6 +142,135 @@ export async function fetchPullRequest(
   return (await response.json()) as GitHubPullRequest;
 }
 
+export async function postReviewToGitHub(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  commitSha: string,
+  summary: string,
+  riskScore: number,
+  comments: Array<{
+    file: string;
+    line: number;
+    severity: string;
+    category: string;
+    message: string;
+    suggestion?: string;
+  }>,
+): Promise<{ id: number; html_url: string }> {
+  const severityEmoji: Record<string, string> = {
+    critical: "🔴",
+    high: "🟠",
+    medium: "🟡",
+    low: "🔵",
+  };
+
+  const categoryEmoji: Record<string, string> = {
+    bug: "🐛",
+    security: "🔒",
+    performance: "⚡",
+    style: "🎨",
+    suggestion: "💡",
+  };
+
+  const riskLabel =
+    riskScore < 25
+      ? "Low"
+      : riskScore < 50
+        ? "Medium"
+        : riskScore < 75
+          ? "High"
+          : "Critical";
+
+  const body = [
+    `## 🤖 AI Code Review`,
+    ``,
+    `**Risk Score:** ${riskScore}/100 (${riskLabel})`,
+    ``,
+    `### Summary`,
+    summary,
+    ``,
+    `---`,
+    `*Powered by [AI Code Reviewer](https://github.com/kuddusclank/aicodereviewer)*`,
+  ].join("\n");
+
+  const reviewComments = comments
+    .filter((c) => c.file && c.line > 0)
+    .map((c) => ({
+      path: c.file,
+      line: c.line,
+      body: [
+        `${severityEmoji[c.severity] || "⚪"} **${c.severity.toUpperCase()}** ${categoryEmoji[c.category] || ""} *${c.category}*`,
+        ``,
+        c.message,
+        ...(c.suggestion ? [``, `**Suggestion:** ${c.suggestion}`] : []),
+      ].join("\n"),
+    }));
+
+  const event =
+    comments.some((c) => c.severity === "critical" || c.severity === "high")
+      ? "REQUEST_CHANGES"
+      : "COMMENT";
+
+  const response = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/vnd.github.v3+json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        commit_id: commitSha,
+        body,
+        event,
+        comments: reviewComments,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    // If inline comments fail (e.g. line numbers don't map to diff), retry without them
+    if (response.status === 422 && reviewComments.length > 0) {
+      const fallback = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            Accept: "application/vnd.github.v3+json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            commit_id: commitSha,
+            body:
+              body +
+              "\n\n### Comments\n" +
+              comments
+                .map(
+                  (c) =>
+                    `- ${severityEmoji[c.severity] || "⚪"} **${c.file}:${c.line}** — ${c.message}`,
+                )
+                .join("\n"),
+            event,
+            comments: [],
+          }),
+        },
+      );
+      if (!fallback.ok) {
+        throw new Error(`GitHub review post failed: ${await fallback.text()}`);
+      }
+      return (await fallback.json()) as { id: number; html_url: string };
+    }
+    throw new Error(`GitHub review post failed: ${errorText}`);
+  }
+
+  return (await response.json()) as { id: number; html_url: string };
+}
+
 export async function fetchPullRequestFiles(
   accessToken: string,
   owner: string,

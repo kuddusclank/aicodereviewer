@@ -1,10 +1,15 @@
 import { v } from "convex/values";
-import { query, mutation, action, internalMutation } from "./_generated/server";
+import {
+  query,
+  action,
+  internalMutation,
+  internalQuery,
+} from "./_generated/server";
 import { internal, api } from "./_generated/api";
 import { getAuthenticatedUser, getGitHubAccessToken } from "./helpers";
-import { fetchPullRequest } from "./github";
+import { fetchPullRequest, postReviewToGitHub } from "./github";
 import { getAvailableProviders } from "./ai";
-import { Id } from "./_generated/dataModel";
+
 
 export const availableModels = query({
   args: {},
@@ -57,6 +62,68 @@ export const trigger = action({
     });
 
     return { reviewId };
+  },
+});
+
+export const postToGitHub = action({
+  args: {
+    reviewId: v.id("reviews"),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    const review = await ctx.runQuery(internal.reviews.getReviewById, {
+      reviewId: args.reviewId,
+    });
+    if (!review || review.userId !== user.id) {
+      throw new Error("Review not found");
+    }
+    if (review.status !== "COMPLETED") {
+      throw new Error("Review must be completed before posting");
+    }
+    const repository = await ctx.runQuery(
+      internal.reviewWorker.getRepository,
+      { repositoryId: review.repositoryId },
+    );
+    if (!repository) throw new Error("Repository not found");
+
+    const accessToken = await getGitHubAccessToken(ctx, user.id);
+    if (!accessToken) throw new Error("GitHub account not connected");
+
+    const [owner, repo] = repository.fullName.split("/");
+    if (!owner || !repo) throw new Error("Invalid repository name");
+
+    const pr = await fetchPullRequest(
+      accessToken,
+      owner,
+      repo,
+      review.prNumber,
+    );
+
+    await postReviewToGitHub(
+      accessToken,
+      owner,
+      repo,
+      review.prNumber,
+      pr.head.sha,
+      review.summary ?? "",
+      review.riskScore ?? 0,
+      (review.comments as Array<{
+        file: string;
+        line: number;
+        severity: string;
+        category: string;
+        message: string;
+        suggestion?: string;
+      }>) ?? [],
+    );
+
+    await ctx.runMutation(internal.reviews.updateReviewStatus, {
+      reviewId: args.reviewId,
+      status: "COMPLETED",
+      postedToGitHub: true,
+    });
+
+    return { success: true };
   },
 });
 
@@ -194,6 +261,13 @@ export const getReviewsForPRs = query({
   },
 });
 
+export const getReviewById = internalQuery({
+  args: { reviewId: v.id("reviews") },
+  handler: async (ctx, args) => {
+    return ctx.db.get(args.reviewId);
+  },
+});
+
 export const updateReviewStatus = internalMutation({
   args: {
     reviewId: v.id("reviews"),
@@ -208,6 +282,7 @@ export const updateReviewStatus = internalMutation({
     comments: v.optional(v.any()),
     aiModel: v.optional(v.string()),
     error: v.optional(v.string()),
+    postedToGitHub: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const { reviewId, ...updates } = args;
