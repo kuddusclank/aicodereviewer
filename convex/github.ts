@@ -254,7 +254,6 @@ export async function postReviewToGitHub(
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            commit_id: commitSha,
             body:
               body +
               "\n\n### Comments\n" +
