@@ -74,14 +74,13 @@ export const getPublicLeaderboard = query({
 export const getRepoBadgeData = internalQuery({
   args: { fullName: v.string() },
   handler: async (ctx, args) => {
-    // Find any repository matching this fullName that is public
-    const repos = await ctx.db.query("repositories").collect();
-    const repo = repos.find(
-      (r) =>
-        r.fullName.toLowerCase() === args.fullName.toLowerCase() && r.isPublic,
-    );
+    // Use index lookup instead of full table scan
+    const repo = await ctx.db
+      .query("repositories")
+      .withIndex("by_fullName", (q) => q.eq("fullName", args.fullName))
+      .first();
 
-    if (!repo) return null;
+    if (!repo || !repo.isPublic) return null;
 
     const reviews = await ctx.db
       .query("reviews")

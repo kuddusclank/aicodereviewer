@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useConvex } from "convex/react";
 import type { FunctionReference, FunctionArgs, FunctionReturnType } from "convex/server";
 
@@ -14,6 +14,7 @@ export function useConvexAction<F extends FunctionReference<"action">>(
   args: FunctionArgs<F> | "skip",
 ) {
   const convex = useConvex();
+  const requestIdRef = useRef(0);
   const [data, setData] = useState<FunctionReturnType<F> | undefined>(
     undefined,
   );
@@ -23,19 +24,26 @@ export function useConvexAction<F extends FunctionReference<"action">>(
 
   const fetchData = useCallback(async () => {
     if (args === "skip") return;
+    const requestId = ++requestIdRef.current;
 
     setIsFetching(true);
-    if (data === undefined) setIsLoading(true);
+    setIsLoading(true);
 
     try {
       const result = await convex.action(action, args);
-      setData(result as FunctionReturnType<F>);
-      setError(null);
+      if (requestId === requestIdRef.current) {
+        setData(result as FunctionReturnType<F>);
+        setError(null);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err : new Error(String(err)));
+      if (requestId === requestIdRef.current) {
+        setError(err instanceof Error ? err : new Error(String(err)));
+      }
     } finally {
-      setIsLoading(false);
-      setIsFetching(false);
+      if (requestId === requestIdRef.current) {
+        setIsLoading(false);
+        setIsFetching(false);
+      }
     }
   }, [convex, action, JSON.stringify(args)]);
 

@@ -1,6 +1,6 @@
 import { v } from "convex/values";
-import { query, mutation, action } from "./_generated/server";
-import { api } from "./_generated/api";
+import { query, mutation, action, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { getAuthenticatedUser } from "./helpers";
 import { LinearClient } from "@linear/sdk";
 
@@ -103,7 +103,7 @@ export const getIssueForPR = action({
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
 
-    const settings = await ctx.runQuery(api.linear.getUserSettings, {});
+    const settings = await ctx.runQuery(internal.linear.getUserSettings, {});
     if (!settings?.linearApiKey) return null;
 
     const identifier = extractLinearIssueId(args.branchName, args.prTitle);
@@ -127,7 +127,7 @@ export const getIssuesForPRs = action({
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
 
-    const settings = await ctx.runQuery(api.linear.getUserSettings, {});
+    const settings = await ctx.runQuery(internal.linear.getUserSettings, {});
     if (!settings?.linearApiKey)
       return {} as Record<number, LinearIssueInfo>;
 
@@ -163,7 +163,7 @@ export const getIssuesForPRs = action({
   },
 });
 
-export const getUserSettings = query({
+export const getUserSettings = internalQuery({
   args: {},
   handler: async (ctx) => {
     const user = await getAuthenticatedUser(ctx);

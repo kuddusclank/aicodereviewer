@@ -27,10 +27,13 @@ export function RepoSettings({
   const updateSettings = useMutation(api.repositories.updateSettings);
   const [copied, setCopied] = useState(false);
 
-  const badgeUrl = convexSiteUrl
-    ? `${convexSiteUrl}/badge/${fullName}.svg`
-    : `https://your-deployment.convex.site/badge/${fullName}.svg`;
-  const badgeMarkdown = `[![Code Health](${badgeUrl})](https://github.com/${fullName})`;
+  const siteUrl =
+    convexSiteUrl ??
+    (typeof window !== "undefined" ? window.location.origin : "");
+  const badgeUrl = siteUrl ? `${siteUrl}/badge/${fullName}.svg` : "";
+  const badgeMarkdown = badgeUrl
+    ? `[![Code Health](${badgeUrl})](https://github.com/${fullName})`
+    : "";
 
   const handleCopy = () => {
     navigator.clipboard.writeText(badgeMarkdown);

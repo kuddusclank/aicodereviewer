@@ -2,6 +2,21 @@ import { BetterAuth } from "@convex-dev/better-auth";
 import { betterAuth } from "better-auth";
 import { components } from "./_generated/api";
 
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required env var: ${name}`);
+  return value;
+}
+
+const trustedOrigins = [
+  process.env.BETTER_AUTH_URL,
+  process.env.NEXT_PUBLIC_APP_URL,
+].filter((v): v is string => Boolean(v));
+
+if (trustedOrigins.length === 0) {
+  throw new Error("Missing BETTER_AUTH_URL or NEXT_PUBLIC_APP_URL");
+}
+
 const ba = new BetterAuth(components.betterAuth, {
   betterAuth: betterAuth({
     emailAndPassword: {
@@ -9,8 +24,8 @@ const ba = new BetterAuth(components.betterAuth, {
     },
     socialProviders: {
       github: {
-        clientId: process.env.GITHUB_CLIENT_ID!,
-        clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+        clientId: requireEnv("GITHUB_CLIENT_ID"),
+        clientSecret: requireEnv("GITHUB_CLIENT_SECRET"),
         scope: ["read:user", "user:email", "repo"],
       },
     },
@@ -28,10 +43,7 @@ const ba = new BetterAuth(components.betterAuth, {
         maxAge: 60 * 5, // 5 minutes
       },
     },
-    trustedOrigins: [
-      process.env.BETTER_AUTH_URL!,
-      process.env.NEXT_PUBLIC_APP_URL!,
-    ].filter(Boolean),
+    trustedOrigins,
   }),
 });
 

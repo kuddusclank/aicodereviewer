@@ -195,7 +195,14 @@ export async function postReviewToGitHub(
     `*Powered by [AI Code Reviewer](https://github.com/kuddusclank/aicodereviewer)*`,
   ].join("\n");
 
-  const reviewComments = comments
+  // Normalize severity/category to lowercase to avoid misclassification
+  const normalizedComments = comments.map((c) => ({
+    ...c,
+    severity: c.severity.toLowerCase(),
+    category: c.category.toLowerCase(),
+  }));
+
+  const reviewComments = normalizedComments
     .filter((c) => c.file && c.line > 0)
     .map((c) => ({
       path: c.file,
@@ -209,7 +216,9 @@ export async function postReviewToGitHub(
     }));
 
   const event =
-    comments.some((c) => c.severity === "critical" || c.severity === "high")
+    normalizedComments.some(
+      (c) => c.severity === "critical" || c.severity === "high",
+    )
       ? "REQUEST_CHANGES"
       : "COMMENT";
 

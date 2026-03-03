@@ -261,6 +261,16 @@ export const getReviewsForPRs = query({
   },
 });
 
+export const claimGitHubPost = internalMutation({
+  args: { reviewId: v.id("reviews") },
+  handler: async (ctx, args) => {
+    const review = await ctx.db.get(args.reviewId);
+    if (!review || review.postedToGitHub) return false;
+    await ctx.db.patch(args.reviewId, { postedToGitHub: true });
+    return true;
+  },
+});
+
 export const getReviewById = internalQuery({
   args: { reviewId: v.id("reviews") },
   handler: async (ctx, args) => {

@@ -96,24 +96,38 @@ export const processReview = internalAction({
       // Auto-post to GitHub if enabled
       if (repository.autoPostToGitHub) {
         try {
-          await postReviewToGitHub(
-            accessToken,
-            owner,
-            repo,
-            prNumber,
-            pr.head.sha,
-            reviewResult.summary,
-            reviewResult.riskScore,
-            reviewResult.comments,
+          // Idempotency guard: claim the post atomically before calling GitHub
+          const claimed = await ctx.runMutation(
+            internal.reviews.claimGitHubPost,
+            { reviewId },
           );
-          await ctx.runMutation(internal.reviews.updateReviewStatus, {
-            reviewId,
-            status: "COMPLETED",
-            postedToGitHub: true,
-          });
+          if (claimed) {
+            await postReviewToGitHub(
+              accessToken,
+              owner,
+              repo,
+              prNumber,
+              pr.head.sha,
+              reviewResult.summary,
+              reviewResult.riskScore,
+              reviewResult.comments,
+            );
+            await ctx.runMutation(internal.reviews.updateReviewStatus, {
+              reviewId,
+              status: "COMPLETED",
+              postedToGitHub: true,
+            });
+          }
         } catch (postError) {
-          // Don't fail the review if posting fails — just log it
-          console.error("Failed to post review to GitHub:", postError);
+          // Don't fail the review if posting fails — log sanitized error only
+          const message =
+            postError instanceof Error ? postError.message : "Unknown error";
+          console.error("Failed to post review to GitHub", {
+            reviewId,
+            repositoryId,
+            prNumber,
+            message,
+          });
         }
       }
     } catch (error) {

@@ -68,11 +68,12 @@ export const connect = mutation({
     let connected = 0;
 
     for (const repo of args.repos) {
-      // Check if already exists by githubId
-      const existing = await ctx.db
+      // Check if already exists by githubId, scoped to current user
+      const matches = await ctx.db
         .query("repositories")
         .withIndex("by_githubId", (q) => q.eq("githubId", repo.githubId))
-        .first();
+        .collect();
+      const existing = matches.find((r) => r.userId === user.id);
 
       if (existing) {
         // Update existing

@@ -24,8 +24,8 @@ async function verifySignature(
 ): Promise<boolean> {
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
   if (!secret) {
-    console.warn("GITHUB_WEBHOOK_SECRET not set, skipping verification");
-    return true;
+    console.error("GITHUB_WEBHOOK_SECRET not set — rejecting webhook");
+    return false;
   }
 
   if (!signature) {

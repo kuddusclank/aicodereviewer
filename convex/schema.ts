@@ -15,7 +15,8 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_githubId", ["githubId"])
-    .index("by_isPublic", ["isPublic"]),
+    .index("by_isPublic", ["isPublic"])
+    .index("by_fullName", ["fullName"]),
 
   reviews: defineTable({
     repositoryId: v.id("repositories"),
