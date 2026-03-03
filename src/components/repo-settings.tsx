@@ -58,6 +58,7 @@ export function RepoSettings({
           </div>
           <Switch
             checked={autoPostToGitHub}
+            aria-label="Auto-post reviews to GitHub"
             onCheckedChange={(checked) =>
               updateSettings({ id: repositoryId, autoPostToGitHub: checked })
             }
@@ -80,6 +81,7 @@ export function RepoSettings({
           </div>
           <Switch
             checked={isPublic}
+            aria-label="Show on public leaderboard"
             onCheckedChange={(checked) =>
               updateSettings({ id: repositoryId, isPublic: checked })
             }

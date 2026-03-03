@@ -258,7 +258,7 @@ export async function postReviewToGitHub(
             body:
               body +
               "\n\n### Comments\n" +
-              comments
+              normalizedComments
                 .map(
                   (c) =>
                     `- ${severityEmoji[c.severity] || "⚪"} **${c.file}:${c.line}** — ${c.message}`,
